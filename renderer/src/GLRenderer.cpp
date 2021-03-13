@@ -11,6 +11,61 @@
 
 #include <boost/log/trivial.hpp>
 
+static constexpr const char * vertex_shader_code = "#version 330 core\n"
+                                       "layout (location = 0) in vec3 aPos;\n"
+                                       "\n"
+                                       "void main()\n"
+                                       "{\n"
+                                       "    gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
+                                       "}\0";
+
+static constexpr const char * fragment_shader_code = "#version 330 core\n"
+                                                     "out vec4 FragColor;\n"
+                                                     "\n"
+                                                     "void main()\n"
+                                                     "{\n"
+                                                     "    FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
+                                                     "}\0";
+
+auto make_shader_program() {
+    auto vertex_shader_id = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertex_shader_id, 1, &vertex_shader_code, nullptr);
+    glCompileShader(vertex_shader_id);
+
+    int success;
+    char info[512];
+    glGetShaderiv(vertex_shader_id, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        glGetShaderInfoLog(vertex_shader_id, 512, nullptr, info);
+        std::cout << "Vertex shader compilation failed: " << info << std::endl;
+    }
+
+    auto fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragment_shader_id, 1, &fragment_shader_code, nullptr);
+    glCompileShader(fragment_shader_id);
+
+    glGetShaderiv(fragment_shader_id, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        glGetShaderInfoLog(fragment_shader_id, 512, nullptr, info);
+        std::cout << "Fragment shader compilation failed: " << info << std::endl;
+    }
+
+    auto shader_prog = glCreateProgram();
+    glAttachShader(shader_prog, vertex_shader_id);
+    glAttachShader(shader_prog, fragment_shader_id);
+    glLinkProgram(shader_prog);
+
+    glGetProgramiv(shader_prog, GL_LINK_STATUS, &success);
+    if (!success) {
+        glGetProgramInfoLog(shader_prog, 512, nullptr, info);
+        std::cout << "Shader program linking failed: " << info << std::endl;
+    }
+    glDeleteShader(vertex_shader_id);
+    glDeleteShader(fragment_shader_id);
+
+    return shader_prog;
+}
+
 namespace rcbe::rendering {
 class GLRendererImplementation {
 public:
@@ -211,11 +266,15 @@ void GLRendererImplementation::drawBuffers(const VertexBufferObject& vbo, const 
                 vbo.disableState();
             }},
             {[this](const VertexBufferObject& vbo, const IndexBufferObject& ibo) {
+                auto shader_prog = make_shader_program();
+
                 // bind VBOs with IDs and set the buffer offsets of the bound VBOs
                 // When buffer object is bound with its ID, all pointers in gl*Pointer()
                 // are treated as offset instead of real pointer.
                 vbo.bind();
                 ibo.bind();
+                vbo.vao().bind();
+                ibo.ebo().bind();
 
                 // enable vertex arrays
                 vbo.enableState();
@@ -225,9 +284,10 @@ void GLRendererImplementation::drawBuffers(const VertexBufferObject& vbo, const 
                 glColorPointer(3, GL_FLOAT, 0, (void*)(vbo.vertsByteSize() + vbo.normsByteSize()));
                 glVertexPointer(3, GL_FLOAT, 0, 0);
                 glDrawElements(GL_TRIANGLES,            // primitive type
-                               ibo.size(),//RendererImplementation::_indices.size(),                      // # of indices
+                               ibo.size(),              // # of indices
                                GL_UNSIGNED_INT,         // data type
                                (void*)0);               // ptr to indices
+                glUseProgram(shader_prog);
                 glDrawArrays( GL_TRIANGLES, 0, vbo.vertsByteSize() + vbo.normsByteSize() + vbo.colorsByteSize());
 
                 vbo.disableState();
@@ -237,6 +297,8 @@ void GLRendererImplementation::drawBuffers(const VertexBufferObject& vbo, const 
                 // pointer, so, normal vertex array operations are re-activated
                 vbo.unbind();
                 ibo.unbind();
+                vbo.vao().undbind();
+                ibo.ebo().unbind();
             }}
     };
 
@@ -266,17 +328,19 @@ std::chrono::microseconds GLRendererImplementation::renderFrame() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
 
     /// main rendering start
+    /// TODO: below code is wrong, whole VBO routine should be redone.
+    /// Only one instance of each buffer is needed.
     if (!meshes_.empty()) {
         if (vertex_buffer_.empty() || changed_) {
             std::lock_guard lg { changed_mutex_ };
-            vertex_buffer_.emplace_back(meshes_);
+            vertex_buffer_.emplace_back(meshes_, true);
         }
 
         const auto& vbo = vertex_buffer_.back();
 
         if (index_buffer_.empty() || changed_) {
             std::lock_guard lg { changed_mutex_ };
-            index_buffer_.emplace_back(meshes_, vbo);
+            index_buffer_.emplace_back(meshes_, vbo, true);
             changed_ = false;
         }
 

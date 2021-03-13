@@ -56,6 +56,7 @@ int main(int argc, char * argv[]) {
         auto second_mesh = meshes[0];
 
         auto low_poly_wolf_mesh = rcbe::parsers::stl::parse_mesh("external/low_poly_wolf_stl/file/LowPolyWolf.stl");
+        auto edge = rcbe::parsers::parse_meshes("parsers/test/resources/simple_edge_quad.x3d")[0];
 
         {
             rcbe::math::yaw y(rcbe::math::deg(0));
@@ -79,6 +80,19 @@ int main(int argc, char * argv[]) {
         }
 
         {
+            rcbe::math::yaw y(rcbe::math::deg(0));
+            rcbe::math::pitch p(rcbe::math::deg(0));
+            rcbe::math::roll r(rcbe::math::deg(0));
+            rcbe::math::Quaternion<rcbe::core::EngineScalar> q { y, p, r };
+
+            rcbe::math::Matrix3x3 rotation { q };
+            rcbe::math::Vector3d translation { 0.0, 0.0, 0.0 };
+
+            rcbe::math::Transform t { rotation, translation };
+            edge.transform(t);
+        }
+
+        {
             rcbe::math::Vector3d translation { 0.0, 0.0, -50.0 };
             rcbe::math::Transform t { {}, translation };
 
@@ -98,9 +112,10 @@ int main(int argc, char * argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds (1000));
         BOOST_LOG_TRIVIAL(debug) << "Meshes should be visible now";
 
-        renderer->addObject(std::move(meshes[0]));
+        /*renderer->addObject(std::move(meshes[0]));
         renderer->addObject(std::move(second_mesh));
-        renderer->addObject(std::move(low_poly_wolf_mesh));
+        renderer->addObject(std::move(low_poly_wolf_mesh));*/
+        renderer->addObject(std::move(edge));
 
         renderer_handle.wait();
         window_handle.wait();

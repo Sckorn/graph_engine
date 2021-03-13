@@ -2,7 +2,10 @@ cc_library(
     name = "rcbe_renderer",
     srcs = glob(
         ["src/**/*.cpp"],
-        exclude = ["src/main.cpp"],
+        exclude = [
+            "src/main.cpp",
+            "src/test_shaders_raw.cpp",
+        ],
     ),
     hdrs = glob(["include/renderer/**/*.hpp"]),
     include_prefix = "rcbe-engine",
@@ -37,6 +40,35 @@ cc_binary(
         "//datamodel:datamodel_system_resources",
         "//parsers:x3d_test_resources",
         "@low_poly_wolf_stl//file",
+    ],
+    linkopts = [
+        "-lpthread",
+        "-lX11",
+        "-lXext",
+    ],
+    tags = ["local"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rcbe_renderer",
+        "//camera:rcbe_engine_camera",
+        "//common:engine_json_utils",
+        "//common:engine_output_utils",
+        "//common:rcbe_profiling",
+        "//datamodel:engine_datamodel_math",
+        "//parsers:rcbe_stl_parser",
+        "//parsers:x3d_parser",
+        "//window_manager:rcbe_window_manager",
+        "@boost//:log",
+    ],
+)
+
+cc_binary(
+    name = "shaders_raw",
+    srcs = ["src/test_shaders_raw.cpp"],
+    data = [
+        "//datamodel:datamodel_rendering_resources",
+        "//datamodel:datamodel_system_resources",
+        "//parsers:x3d_test_resources",
     ],
     linkopts = [
         "-lpthread",

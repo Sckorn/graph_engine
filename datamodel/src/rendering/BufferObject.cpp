@@ -3,7 +3,38 @@
 #include <boost/log/trivial.hpp>
 
 namespace rcbe::rendering {
-VertexBufferObject::VertexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes) {
+
+VertexBufferObject::VertexArrayObject::VertexArrayObject() {
+    glGenVertexArrays(1, &id_);
+}
+
+VertexBufferObject::VertexArrayObject::~VertexArrayObject() {
+    glDeleteVertexArrays(1, &id_);
+}
+
+void VertexBufferObject::VertexArrayObject::bind() const {
+    //if (!binded_) {
+        glBindVertexArray(id_);
+    //    binded_ = true;
+    //}
+}
+
+void VertexBufferObject::VertexArrayObject::undbind() const {
+    //if (binded_) {
+        glBindVertexArray(0);
+    //    binded_ = false;
+    //}
+}
+
+void VertexBufferObject::VertexArrayObject::setData(const StorageType &vertices) const {
+    glVertexAttribPointer(
+            0, 3, GL_FLOAT, false,
+            vertices.size(), (void*)0
+            );
+    //glEnableVertexAttribArray(0);
+}
+
+VertexBufferObject::VertexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes, bool use_vao ) {
     // right now keeping it simple, it's not a VBO's business to validate meshes
     // they'll be validated by scene graph
 
@@ -43,13 +74,13 @@ VertexBufferObject::VertexBufferObject(const std::vector<rcbe::geometry::Mesh>& 
             colors_.push_back(color.g());
             colors_.push_back(color.b());
 
-            if (normals_intact_) {
+            //if (normals_intact_) {
                 const auto& n = normals[i];
 
                 normals_.push_back(n.x());
                 normals_.push_back(n.y());
                 normals_.push_back(n.z());
-            }
+            //}
         }
     }
 
@@ -59,7 +90,12 @@ VertexBufferObject::VertexBufferObject(const std::vector<rcbe::geometry::Mesh>& 
 
     buffer_size_bytes_ = vertices_byte_size_ + normals_byte_size_ + colors_byte_size_;
 
+    if (use_vao)
+        vao_ = VertexArrayObject();
     glGenBuffers(1, &id_);
+
+    if (use_vao)
+        vao_->bind();
     bind();
 
     glBufferData(GL_ARRAY_BUFFER, buffer_size_bytes_, 0, GL_STATIC_DRAW);
@@ -67,7 +103,13 @@ VertexBufferObject::VertexBufferObject(const std::vector<rcbe::geometry::Mesh>& 
     glBufferSubData(GL_ARRAY_BUFFER, 0, vertices_byte_size_, vertices_.data());
     glBufferSubData(GL_ARRAY_BUFFER, vertices_byte_size_, normals_byte_size_, normals_.data());
     glBufferSubData(GL_ARRAY_BUFFER, vertices_byte_size_ + normals_byte_size_, colors_byte_size_, colors_.data());
+
+    if (use_vao)
+        vao_->setData(vertices_);
+
     unbind();
+    if (use_vao)
+        vao_->undbind();
 }
 
 VertexBufferObject::~VertexBufferObject() {
@@ -134,7 +176,34 @@ const std::vector<size_t>& VertexBufferObject::offsets() const noexcept {
     return vertices_offset_;
 }
 
-IndexBufferObject::IndexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes, const VertexBufferObject& vbo) {
+const VertexBufferObject::VertexArrayObject &VertexBufferObject::vao() const {
+    if (vao_)
+        return *vao_;
+    else
+        throw std::runtime_error("VAO wasn't set, which most likely means use_vao flag wasn't supplied to ctor");
+}
+
+IndexBufferObject::ElementBufferObject::ElementBufferObject() {
+    glGenBuffers(1, &id_);
+}
+
+IndexBufferObject::ElementBufferObject::~ElementBufferObject() {
+    glDeleteBuffers(1, &id_);
+}
+
+void IndexBufferObject::ElementBufferObject::bind() const {
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, id_);
+}
+
+void IndexBufferObject::ElementBufferObject::unbind() const {
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+}
+
+void IndexBufferObject::ElementBufferObject::setData(const StorageType &indices) const {
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(typename StorageType::value_type), indices.data(), GL_STATIC_DRAW);
+}
+
+IndexBufferObject::IndexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes, const VertexBufferObject& vbo, bool use_ebo) {
     auto itotal = std::accumulate(meshes.begin(), meshes.end(), 0, [](auto sum, const auto &entry) {
         return sum + entry.facetsSize();
     });
@@ -156,10 +225,26 @@ IndexBufferObject::IndexBufferObject(const std::vector<rcbe::geometry::Mesh>& me
         ++i;
     }
 
-    glGenBuffers(1, &id_);
-    bind();
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices_.size() * sizeof(decltype(indices_)::value_type), indices_.data(), GL_STATIC_DRAW);
-    unbind();
+    if (use_ebo)
+        ebo_ = ElementBufferObject();
+    else
+        glGenBuffers(1, &id_);
+
+
+    if (use_ebo)
+        ebo_->bind();
+    else
+        bind();
+
+    if (use_ebo)
+        ebo_->setData(indices_);
+    else
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices_.size() * sizeof(decltype(indices_)::value_type), &indices_[0], GL_STATIC_DRAW);
+
+    if(use_ebo)
+        ebo_->unbind();
+    else
+        unbind();
 }
 
 IndexBufferObject::~IndexBufferObject() {
@@ -167,10 +252,18 @@ IndexBufferObject::~IndexBufferObject() {
 }
 
 void IndexBufferObject::bind() const {
+    if (ebo_) {
+        ebo_->bind();
+        return;
+    }
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, id_);
 }
 
 void IndexBufferObject::unbind() const {
+    if (ebo_) {
+        ebo_->unbind();
+        return;
+    }
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
@@ -180,6 +273,13 @@ size_t IndexBufferObject::size() const noexcept {
 
 IndexBufferObject::RawDataType IndexBufferObject::data() const noexcept {
     return indices_.data();
+}
+
+const IndexBufferObject::ElementBufferObject &IndexBufferObject::ebo() const {
+    if (ebo_)
+        return *ebo_;
+    else
+        throw std::runtime_error("EBO wasn't set, which most likely means use_ebo flag wasn't supplied to ctor");
 }
 
 }

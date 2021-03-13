@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <variant>
+#include <optional>
 
 #include <GL/gl.h>
 
@@ -14,11 +15,31 @@ namespace rcbe::rendering {
 
 class VertexBufferObject {
 public:
+
     using ValueType = GLfloat;
     using StorageType = std::vector<ValueType>;
     using RawDataType = const ValueType *;
 
-    explicit VertexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes);
+    class VertexArrayObject {
+    public:
+        VertexArrayObject();
+        ~VertexArrayObject();
+
+        VertexArrayObject(const VertexArrayObject &other) = default;
+        VertexArrayObject &operator=(const VertexArrayObject &other) = default;
+
+        VertexArrayObject(VertexArrayObject &&other) = default;
+        VertexArrayObject &operator=(VertexArrayObject &&other) = default;
+
+        void bind() const;
+        void undbind() const;
+        void setData(const StorageType &vertices) const;
+    private:
+        unsigned int id_ = 0;
+        mutable bool binded_ = false;
+    };
+
+    explicit VertexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes, bool use_vao = false);
 
     ~VertexBufferObject();
 
@@ -41,6 +62,7 @@ public:
     [[nodiscard]] RawDataType colorsData() const noexcept;
 
     [[nodiscard]] const std::vector<size_t>& offsets() const noexcept;
+    [[nodiscard]] const VertexArrayObject &vao() const;
 
 private:
     bool normals_intact_ = false;
@@ -59,6 +81,8 @@ private:
     StorageType colors_;
 
     std::vector<size_t> vertices_offset_;
+
+    std::optional<VertexArrayObject> vao_ {};
 };
 
 class IndexBufferObject {
@@ -67,10 +91,24 @@ public:
     using StorageType = std::vector<ValueType>;
     using RawDataType = const ValueType *;
 
+    class ElementBufferObject {
+    public:
+        ElementBufferObject();
+        ~ElementBufferObject();
+
+        void bind() const;
+        void unbind() const;
+        void setData(const StorageType &indices) const;
+
+    private:
+        unsigned int id_ = 0;
+        mutable bool binded_ = false;
+    };
+
     IndexBufferObject() = delete;
     ~IndexBufferObject();
 
-    IndexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes, const VertexBufferObject& vbo);
+    IndexBufferObject(const std::vector<rcbe::geometry::Mesh>& meshes, const VertexBufferObject& vbo, bool use_ebo = false);
 
     void bind() const;
     void unbind() const;
@@ -79,10 +117,14 @@ public:
 
     [[nodiscard]] RawDataType data() const noexcept;
 
+    [[nodiscard]] const ElementBufferObject &ebo() const;
+
 private:
     GLuint id_;
     std::vector<size_t> vertices_offset_;
     StorageType indices_;
+
+    std::optional<ElementBufferObject> ebo_ = {};
 };
 
 }
